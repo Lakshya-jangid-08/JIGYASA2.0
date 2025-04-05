@@ -211,12 +211,12 @@ class SurveyResponseSerializer(serializers.ModelSerializer):
         fields = ['id', 'survey', 'respondent', 'submitted_at', 'answers']
 
     def create(self, validated_data):
-        answers_data = validated_data.pop('answers', [])
+        answers_data = validated_data.pop('answer_set', [])
         response = SurveyResponse.objects.create(**validated_data)
         
         for answer_data in answers_data:
             selected_choices = answer_data.pop('selected_choices', [])
-            answer = Answer.objects.create(survey_response=response, **answer_data)
+            answer = Answer.objects.create(response=response, **answer_data)
             answer.selected_choices.set(selected_choices)
         
         return response
