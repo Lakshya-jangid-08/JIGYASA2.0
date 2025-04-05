@@ -214,6 +214,12 @@ class SurveyResponseViewSet(viewsets.ModelViewSet):
                 if selected_choices:
                     answer.selected_choices.set(selected_choices)
             
+            print("Survey response data:", {
+                "survey": response.survey.id,
+                "respondent": response.respondent.id if response.respondent else None,
+                "answers": answers_data
+            })
+            
             return Response({"detail": "Response submitted successfully"}, status=status.HTTP_201_CREATED)
             
         except Survey.DoesNotExist:

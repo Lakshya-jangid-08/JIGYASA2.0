@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowLeft, Download } from 'lucide-react';
+import { ArrowLeft, Download, BarChart2, PieChart, List } from 'lucide-react';
+import { Pie, Bar } from 'react-chartjs-2';
+import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement } from 'chart.js';
+
+ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement);
 
 const SurveyResponses = () => {
   const { id } = useParams();
@@ -9,6 +13,9 @@ const SurveyResponses = () => {
   const [responses, setResponses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [viewMode, setViewMode] = useState('summary'); // 'summary' or 'individual'
+  const [tableView, setTableView] = useState(false); // New state for table view
+  const [questionStats, setQuestionStats] = useState({});
 
   useEffect(() => {
     fetchSurveyAndResponses();
@@ -32,18 +39,79 @@ const SurveyResponses = () => {
       };
 
       // Fetch survey details
-      const surveyResponse = await axios.get(`/api/surveys/${id}/`, { headers });
+      const surveyResponse = await axios.get(`http://localhost:8000/api/surveys/${id}/`, { headers });
       setSurvey(surveyResponse.data);
 
       // Fetch survey responses
-      const responsesResponse = await axios.get(`/api/survey-responses/?survey=${id}`, { headers });
+      const responsesResponse = await axios.get(`http://localhost:8000/api/survey-responses/?survey=${id}`, { headers });
       setResponses(responsesResponse.data);
+
+      // Calculate question statistics
+      calculateQuestionStats(surveyResponse.data.questions, responsesResponse.data);
     } catch (error) {
       console.error('Error fetching survey responses:', error);
       setError(error.response?.data?.detail || 'Failed to load survey responses');
     } finally {
       setLoading(false);
     }
+  };
+
+  const calculateQuestionStats = (questions, responses) => {
+    console.log("Debugging calculateQuestionStats:");
+    console.log("Questions:", questions);
+    console.log("Responses:", responses);
+
+    if (!questions || !Array.isArray(questions)) {
+      console.error("Questions are undefined or not an array.");
+      return;
+    }
+
+    if (!responses || !Array.isArray(responses)) {
+      console.error("Responses are undefined or not an array.");
+      return;
+    }
+
+    const stats = {};
+    
+    questions.forEach(question => {
+      if (question.question_type === 'text') {
+        stats[question.id] = {
+          type: 'text',
+          total: responses.filter(r => 
+            r.answers?.some(a => a.question === question.id)
+          ).length
+        };
+      } else {
+        const choiceCounts = {};
+        question.choices?.forEach(choice => {
+          choiceCounts[choice.id] = 0;
+        });
+
+        responses.forEach(response => {
+          const answer = response.answers?.find(a => a.question === question.id);
+          if (answer) {
+            answer.selected_choices?.forEach(choiceId => {
+              choiceCounts[choiceId] = (choiceCounts[choiceId] || 0) + 1;
+            });
+          }
+        });
+
+        stats[question.id] = {
+          type: question.question_type,
+          choices: question.choices?.map(choice => ({
+            id: choice.id,
+            text: choice.text,
+            count: choiceCounts[choice.id] || 0
+          })) || [],
+          total: responses.filter(r => 
+            r.answers?.some(a => a.question === question.id)
+          ).length
+        };
+      }
+    });
+
+    console.log("Calculated stats:", stats);
+    setQuestionStats(stats);
   };
 
   const formatDate = (dateString) => {
@@ -102,6 +170,169 @@ const SurveyResponses = () => {
     document.body.removeChild(link);
   };
 
+  const renderQuestionSummary = (question) => {
+    const stats = questionStats[question.id];
+    if (!stats) return null;
+
+    if (stats.type === 'text') {
+      return (
+        <div className="mt-4">
+          <h4 className="text-sm font-medium text-gray-900">Text Responses ({stats.total})</h4>
+          <div className="mt-2 bg-gray-50 p-4 rounded-md max-h-60 overflow-y-auto">
+            {responses.map(response => {
+              const answer = response.answers.find(a => a.question === question.id);
+              return answer?.text_answer ? (
+                <div key={response.id} className="mb-2 p-2 bg-white rounded border border-gray-200">
+                  <p className="text-sm">{answer.text_answer}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {response.respondent?.email || 'Anonymous'} • {formatDate(response.submitted_at)}
+                  </p>
+                </div>
+              ) : null;
+            }).filter(Boolean)}
+          </div>
+        </div>
+      );
+    }
+
+    // For choice questions, show charts
+    return (
+      <div className="mt-4">
+        <h4 className="text-sm font-medium text-gray-900">Response Summary ({stats.total} responses)</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+          <div className="bg-white p-4 rounded-md border border-gray-200">
+            <h5 className="text-xs font-medium text-gray-500 mb-2">Pie Chart</h5>
+            <div className="h-64">
+              <Pie
+                data={{
+                  labels: stats.choices.map(c => c.text),
+                  datasets: [{
+                    data: stats.choices.map(c => c.count),
+                    backgroundColor: [
+                      '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+                      '#EC4899', '#14B8A6', '#F97316', '#64748B', '#84CC16'
+                    ],
+                    borderWidth: 1
+                  }]
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: {
+                      position: 'right'
+                    }
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <div className="bg-white p-4 rounded-md border border-gray-200">
+            <h5 className="text-xs font-medium text-gray-500 mb-2">Bar Chart</h5>
+            <div className="h-64">
+              <Bar
+                data={{
+                  labels: stats.choices.map(c => c.text),
+                  datasets: [{
+                    label: 'Responses',
+                    data: stats.choices.map(c => c.count),
+                    backgroundColor: '#3B82F6',
+                    borderWidth: 1
+                  }]
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  scales: {
+                    y: {
+                      beginAtZero: true,
+                      ticks: {
+                        precision: 0
+                      }
+                    }
+                  }
+                }}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="mt-4">
+          <h5 className="text-sm font-medium text-gray-500 mb-2">Response Breakdown</h5>
+          <ul className="space-y-2">
+            {stats.choices.map(choice => (
+              <li key={choice.id} className="flex items-center">
+                <span className="w-48 text-sm text-gray-900">{choice.text}</span>
+                <div className="flex-1 flex items-center">
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div 
+                      className="bg-blue-600 h-2.5 rounded-full" 
+                      style={{ width: `${stats.total ? (choice.count / stats.total) * 100 : 0}%` }}
+                    ></div>
+                  </div>
+                  <span className="ml-2 text-xs text-gray-500 w-12">
+                    {choice.count} ({stats.total ? Math.round((choice.count / stats.total) * 100) : 0}%)
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    );
+  };
+
+  const renderTableView = () => {
+    if (!survey || !responses.length) return null;
+
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-collapse border border-gray-200">
+          <thead>
+            <tr>
+              <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Response ID</th>
+              <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Submitted At</th>
+              <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Respondent</th>
+              {survey.questions.map((question) => (
+                <th key={question.id} className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">
+                  {question.text}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {responses.map((response) => (
+              <tr key={response.id}>
+                <td className="border border-gray-300 px-4 py-2 text-sm text-gray-700">{response.id}</td>
+                <td className="border border-gray-300 px-4 py-2 text-sm text-gray-700">{formatDate(response.submitted_at)}</td>
+                <td className="border border-gray-300 px-4 py-2 text-sm text-gray-700">
+                  {response.respondent ? response.respondent.email : 'Anonymous'}
+                </td>
+                {survey.questions.map((question) => {
+                  const answer = response.answers.find((a) => a.question === question.id);
+                  return (
+                    <td key={question.id} className="border border-gray-300 px-4 py-2 text-sm text-gray-700">
+                      {answer
+                        ? answer.text_answer ||
+                          (answer.selected_choices &&
+                            answer.selected_choices
+                              .map((choiceId) => {
+                                const choice = question.choices.find((c) => c.id === choiceId);
+                                return choice ? choice.text : '';
+                              })
+                              .filter(Boolean)
+                              .join('; '))
+                        : 'No answer provided'}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+
   if (loading) {
     return (
       <div className="p-6 flex justify-center items-center">
@@ -131,15 +362,38 @@ const SurveyResponses = () => {
             <ArrowLeft className="h-4 w-4 mr-1" />
             Back to Survey
           </Link>
-          {responses.length > 0 && (
+          <div className="flex space-x-3">
             <button
-              onClick={exportToCSV}
+              onClick={() => setViewMode('summary')}
+              className={`inline-flex items-center px-3 py-2 border text-sm font-medium rounded-md ${viewMode === 'summary' ? 'bg-indigo-100 border-indigo-300 text-indigo-700' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'}`}
+            >
+              <BarChart2 className="h-4 w-4 mr-1" />
+              Summary
+            </button>
+            <button
+              onClick={() => setViewMode('individual')}
+              className={`inline-flex items-center px-3 py-2 border text-sm font-medium rounded-md ${viewMode === 'individual' ? 'bg-indigo-100 border-indigo-300 text-indigo-700' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'}`}
+            >
+              <List className="h-4 w-4 mr-1" />
+              Individual
+            </button>
+            <button
+              onClick={() => setTableView(!tableView)}
               className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
             >
-              <Download className="h-4 w-4 mr-1" />
-              Export to CSV
+              <BarChart2 className="h-4 w-4 mr-1" />
+              {tableView ? 'Hide Table' : 'View Table'}
             </button>
-          )}
+            {responses.length > 0 && (
+              <button
+                onClick={exportToCSV}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+              >
+                <Download className="h-4 w-4 mr-1" />
+                Export to CSV
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-6">
@@ -158,6 +412,24 @@ const SurveyResponses = () => {
             <div className="px-4 py-5 sm:p-6">
               <p className="text-gray-500 text-center">No responses yet for this survey.</p>
             </div>
+          </div>
+        ) : tableView ? (
+          renderTableView()
+        ) : viewMode === 'summary' ? (
+          <div className="space-y-8">
+            {survey.questions.map(question => (
+              <div key={question.id} className="bg-white shadow overflow-hidden sm:rounded-lg">
+                <div className="px-4 py-5 sm:px-6">
+                  <h3 className="text-lg font-medium text-gray-900">{question.text}</h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    {question.question_type} • {questionStats[question.id]?.total || 0} responses
+                  </p>
+                </div>
+                <div className="px-4 py-5 sm:p-6">
+                  {renderQuestionSummary(question)}
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <div className="bg-white shadow overflow-hidden sm:rounded-lg">
@@ -221,4 +493,4 @@ const SurveyResponses = () => {
   );
 };
 
-export default SurveyResponses; 
+export default SurveyResponses;
