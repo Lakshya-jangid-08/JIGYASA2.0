@@ -196,10 +196,33 @@ class SurveyResponseViewSet(viewsets.ModelViewSet):
             if request.user.is_authenticated:
                 request.data['respondent'] = request.user.id
             
-            return super().create(request, *args, **kwargs)
+            # Ensure answers are properly linked to the survey
+            answers_data = request.data.pop('answers', [])
+            response = SurveyResponse.objects.create(survey=survey, respondent=request.user)
+            
+            for answer_data in answers_data:
+                question_id = answer_data.get('question')
+                question = Question.objects.get(id=question_id, survey=survey)
+                selected_choices = answer_data.get('selected_choices', [])
+                text_answer = answer_data.get('text_answer', None)
+                
+                answer = Answer.objects.create(
+                    response=response,
+                    question=question,
+                    text_answer=text_answer
+                )
+                if selected_choices:
+                    answer.selected_choices.set(selected_choices)
+            
+            return Response({"detail": "Response submitted successfully"}, status=status.HTTP_201_CREATED)
             
         except Survey.DoesNotExist:
             return Response(
                 {"detail": "Survey not found"},
                 status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"detail": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
             )
