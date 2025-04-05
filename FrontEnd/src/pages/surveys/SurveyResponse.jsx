@@ -28,9 +28,9 @@ const SurveyResponse = () => {
 
       console.log('Fetching survey with ID:', id);
 
-      const response = await axios.get(`/api/surveys/${id}/public/`, { headers });
+      const response = await axios.get(`http://localhost:8000/api/surveys/${id}/`,{headers});
       
-      console.log('Raw survey response:', response.data);
+      console.log('Raw survey response:', response.data); 
 
       if (!response.data) {
         throw new Error('No survey data received');
@@ -132,13 +132,14 @@ const SurveyResponse = () => {
       console.log('Submitting answers:', formattedAnswers);
 
       await axios.post(
-        '/api/survey-responses/',
+        'http://localhost:8000/api/survey-responses/',
         {
           survey: id,
           answers: formattedAnswers
         },
         { headers }
       );
+      
 
       navigate('/thank-you');
     } catch (error) {
