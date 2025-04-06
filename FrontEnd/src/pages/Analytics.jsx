@@ -1,7 +1,23 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
 import { BarChart3, Users, Clock, CheckCircle } from 'lucide-react';
 
 const Analytics = () => {
+  const [plotData, setPlotData] = useState(null);
+
+  useEffect(() => {
+    const fetchPlotData = async () => {
+      try {
+        const response = await axios.get('http://localhost:8000/api/plot-data'); // Replace with actual backend endpoint
+        setPlotData(response.data);
+      } catch (error) {
+        console.error('Error fetching plot data:', error);
+      }
+    };
+
+    fetchPlotData();
+  }, []);
+
   const stats = [
     {
       name: 'Total Responses',
@@ -119,7 +135,7 @@ const Analytics = () => {
                         scope="col"
                         className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                       >
-                        Avg. Time
+                        Avg. Response Time
                       </th>
                     </tr>
                   </thead>
@@ -146,6 +162,17 @@ const Analytics = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      <div className="mt-8">
+        <h2 className="text-lg font-medium text-gray-900">Plot Data</h2>
+        {plotData ? (
+          <pre className="bg-gray-100 p-4 rounded-lg">
+            {JSON.stringify(plotData, null, 2)}
+          </pre>
+        ) : (
+          <p>Loading plot data...</p>
+        )}
       </div>
     </div>
   );

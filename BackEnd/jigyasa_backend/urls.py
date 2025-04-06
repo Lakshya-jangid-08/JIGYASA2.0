@@ -20,5 +20,6 @@ from django.urls import path, include
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('jigyasa.urls')),
+    path('survey-analyzer/', include('survey_analyzer.urls')),
 ]
 
